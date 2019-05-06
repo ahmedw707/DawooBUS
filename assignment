@@ -1,0 +1,421 @@
+import numpy as np
+import pandas as pd
+import datetime as dt
+import os
+import time
+from collections import Counter
+start = time. time()
+#%%
+# Manual input 
+
+# Date= 
+# 
+
+
+#%%
+
+def bustype(buslist, btype):
+    if buslist==[]: return []
+    global busprop
+    output=[]
+    for i in buslist:
+        if 'temp' in i: continue
+        if (busprop[busprop['Bus']==i]['Type'].iloc[0]==btype):
+            output.append(i)
+    return output
+
+def AssignedRoute(buslist, A1):
+    if buslist==[]: return []
+    global busprop
+    A2=A1[4:]+"-"+A1[:3]
+    output=[]
+    for i in buslist:
+        if 'temp' in i: continue
+        if (busprop[busprop['Bus']==i]['Route'].iloc[0]==A1) or (busprop[busprop['Bus']==i]['Route'].iloc[0]==A2):
+            output.append(i)
+    return output
+
+def secondary(buslist, routelist):
+    if buslist==[]: return []
+    global busprop
+    output=[]
+    for i in buslist:
+        if 'temp' in i: continue
+        if (busprop[busprop['Bus']==i]['Route'].iloc[0] in routelist) or (busprop[busprop['Bus']==i]['Route'].iloc[0] in routelist):
+            output.append(i)
+    return output
+
+def RouteR(buslist, Dep, Arr):
+    if buslist==[]: return []
+    global busprop
+    output=[]
+    for i in buslist:
+        if 'temp' in i: continue
+        if (Dep not in busprop[busprop['Bus']==i]['Route'].iloc[0]) and (Arr in busprop[busprop['Bus']==i]['Route'].iloc[0]):
+            output.append(i)
+    return output
+
+def updateR(sbuscount,Rating):
+    rank, count, previous, buscountrank = 0, 0, None, {}
+    for key, num in sbuscount:    
+        count += 0.5
+        if num != previous:
+            rank += count
+            previous = num
+            count = 0
+        buscountrank[key] = rank
+    Ranking = dict(Counter(buscountrank)+Counter(Rating))
+    return Ranking
+
+#%%
+routelist = pd.read_excel('routelist.xlsx', sheet_name='Sheet4')
+busprop=pd.read_excel('buses properties.xlsx', sheet_name='Buses3')
+Jan=pd.read_excel('MATCH LIST.xlsx', sheet_name='JAN') 
+stay=pd.read_excel('stay.xlsx', sheet_name='Sheet1')
+dtime=pd.read_excel('Date.xlsx', sheet_name='Sheet1')
+
+busprop['Departure']=busprop['Route1'].apply(lambda x:x[:3])
+busprop['Arrival']=busprop['Route1'].apply(lambda x:x[4:])
+busprop['Route']=busprop["Arrival"] + "-" + busprop["Departure"]
+
+stay['Stay']=stay['Stay'].apply(lambda x:dt.timedelta(hours=x.hour, minutes=x.minute))
+mylist=pd.merge(Jan,routelist[['Route','Trip','Km','Step', "Arrival"]],on='Route', how='left')
+mylist2=pd.merge(mylist,busprop[['Bus','Year','Breakdown','Availability','Standby',"Preference"]],on='Bus', how='left')
+df=mylist2.drop(columns=["Schedule departure", "Step",'Actual Departure Time','Km','Step','Arrival_y'])
+df=df[df["Bus"]!="Drop"]
+df=df[df["Bus"]!="DROP"]
+df.loc[df['Trip']!=df['Trip'],'Trip']=2359
+df["Trip"]=df["Trip"].apply(int)
+df["Trip"]=df["Trip"].apply(str)
+df["min"]=df["Trip"].apply(lambda x:x[len(x)-2:]).apply(int)
+df["hour"]=df["Trip"].apply(lambda x:x[0:len(x)-2] if len(x)>2 else '0').apply(int)
+df["triptime"]=df["min"].apply(lambda x: np.timedelta64(x,'m'))+df["hour"].apply(lambda x: np.timedelta64(x,'h'))
+df=df.drop(columns=['Trip','min','hour'])
+
+dtime["Dlist"]=dtime["Datetime"].apply(lambda x:x if int(x.strftime("%M"))%15==0 else x+pd.to_timedelta(15-int(x.strftime("%M"))%15,'m'))
+df["depdate"]=df["datetime"].apply(lambda x:x if int(x.strftime("%M"))%15==0 else x+pd.to_timedelta(15-int(x.strftime("%M"))%15,'m'))
+df["arrdate"]=df["depdate"]+df["triptime"]
+df["arrdate"]=df["arrdate"].apply(lambda x:x if int(x.strftime("%M"))%15==0 else x+pd.to_timedelta(15-int(x.strftime("%M"))%15,'m'))
+df['triptime']=df['arrdate']-df['depdate']
+df['Departure']=df['Route'].apply(lambda x:x[:3])
+df['Year'] = df['Year'].apply(lambda x: int(x))
+df['Breakdown'] = df['Breakdown'].apply(lambda x: int(x))
+
+df=pd.merge(df, stay, on='Route11', how='left')
+df.loc[df['Stay']!=df['Stay'],'Stay']=dt.time(0,0)
+
+#%%
+## INPUT Schedule Provided by the Operations Department
+
+schedule=pd.read_excel('Schedule.xlsx', sheet_name='Schedule')
+sl=pd.merge(schedule,routelist[['Route', "Trip"]],on='Route', how='left')
+sl.loc[sl['Trip']!=sl['Trip'],'Trip']=2359
+sl["Trip"]=sl["Trip"].apply(int)
+sl["Trip"]=sl["Trip"].apply(str)
+sl["min"]=sl["Trip"].apply(lambda x:x[len(x)-2:]).apply(int)
+sl["hour"]=sl["Trip"].apply(lambda x:x[0:len(x)-2] if len(x)>2 else '0').apply(int)
+sl["triptime"]=sl["min"].apply(lambda x: np.timedelta64(x,'m'))+sl["hour"].apply(lambda x: np.timedelta64(x,'h'))
+sl=sl.drop(columns=['Trip','min','hour'])
+
+sl["depdate"]=sl["datetime"].apply(lambda x:x if int(x.strftime("%M"))%15==0 else x+pd.to_timedelta(15-int(x.strftime("%M"))%15,'m'))
+sl["arrdate"]=sl["depdate"]+sl["triptime"]
+sl["arrdate"]=sl["arrdate"].apply(lambda x:x if int(x.strftime("%M"))%15==0 else x+pd.to_timedelta(15-int(x.strftime("%M"))%15,'m'))
+sl['triptime']=sl['arrdate']-sl['depdate']
+sl['Departure']=sl['Route'].apply(lambda x:x[:3])
+
+sl=pd.merge(sl, stay, on='Route11', how='left')
+
+#%%
+
+planfrom=pd.Timestamp('2019-01-23 00:00:00')
+plantill=pd.Timestamp('2019-01-23 23:59:00')
+
+dfhalf=df[df['Date']<planfrom]
+dfhalf=dfhalf.reset_index()
+busloc={}
+bustime={}
+busAvailability={}
+standby={}
+buscount={}
+Ranking={}
+Rating={}
+Type={}
+
+for i in dfhalf.index:
+    busloc[dfhalf.iloc[i]['Bus']]=dfhalf.iloc[i]['Actual Arrival']
+    bustime[dfhalf.iloc[i]['Bus']]=dfhalf.iloc[i]['arrdate'] 
+    busAvailability[dfhalf.iloc[i]['Bus']]=dfhalf.iloc[i]['Availability']
+    standby[dfhalf.iloc[i]['Bus']]=dfhalf.iloc[i]['Standby']
+    
+for i in bustime:
+    if bustime[i]<planfrom:
+        bustime[i]=planfrom-pd.Timedelta('0 days 01:00:00')
+          
+for i in busprop.index:
+    busprop['rate'] = ((busprop.Breakdown.rank(ascending=0,method='min')*0.15))+((busprop.Year.rank(ascending=1,method='min')*0.25))+((busprop.Accident.rank(ascending=0,method='min')*0.1))#+((buscount[i].rank(ascending=1)*0.5))
+    Rating[busprop.iloc[i]['Bus']]=busprop.iloc[i]['rate']
+    Type[busprop.iloc[i]['Bus']]=busprop.iloc[i]['Type']
+#   Ranking = dict(Counter(buscountrank)+Counter(Rating))
+    
+for i in list(busprop['Bus']):
+    buscount[i]=0
+    
+sbuscount = sorted(buscount.items(), key=lambda item: item[1])
+Ranking=updateR(sbuscount,Rating)
+
+
+tlist=sorted(list(set(list(df['depdate'])+list(dtime['Dlist']))))
+tlist=[item for item in tlist if item >=planfrom]
+tlist=[planfrom-pd.Timedelta('0 days 01:00:00')]+tlist
+cities=list(set(list(df['Actual Arrival'])))
+
+a=df.groupby(['Route11']).count()['Sr']
+routeused=pd.DataFrame({'Route':a.index,'Count':a.values})
+routeused=routeused[routeused['Count']>14]
+
+rd={}
+for city in cities:
+    rd[city]={'primaryr':[], 'primaryc':[], 'secondaryr':[]}
+    for route in list(routeused['Route']):
+        tick=0
+        dep=route[:3]
+        arr=route[4:]
+        if city==dep:
+            rd[city]['primaryr'].append(route)
+            if arr not in rd[city]['primaryc']:
+                pcity=arr
+                rd[city]['primaryc'].append(arr)
+                tick=1
+                
+        elif city==arr:
+            rd[city]['primaryr'].append(route)
+            if dep not in rd[city]['primaryc']:
+                pcity=dep
+                rd[city]['primaryc'].append(dep)
+                tick=1
+        if tick==1:
+            for route2 in list(set(list(df['Route11']))):
+                if pcity in route2 and route2 not in rd[city]['primaryr']:
+                    rd[city]['secondaryr'].append(route2)
+
+opsbuses=[]
+r={}
+for city in cities:
+    temp={}
+    count=0    
+    for t in tlist:
+        count+=1 #a vague approximatioon of latest arrival time of previous period
+        if count<=200:
+            buslist=[]
+            buslist2=[]
+            for b in busloc:
+                if busloc[b]==city and bustime[b]==t and busAvailability[b]=='Available' and standby[b]=='Operational':
+                    buslist.append(b)    
+                elif busloc[b]==city and bustime[b]==t and busAvailability[b]=='Available' and standby[b]=='Standby':
+                    buslist2.append(b)    
+            temp[t]={'buslist':buslist, 'buslist2':buslist2}
+        else:
+            temp[t]={'buslist':[], 'buslist2':[]}
+        r[city]=temp
+
+deponly=sl[sl['Terminal']==sl['Terminal']]
+
+#deponly=deponly[deponly['depdate']>=planfrom]
+#deponly=deponly[deponly['depdate']<plantill]        
+dfdict=deponly[['Terminal','Departure','Arrival_X','depdate','triptime','arrdate', 'Type', 'Route11']].to_dict('split')
+#%%
+
+print (1)
+end = time. time()
+print ((end - start)/60)
+
+start2 = time. time()
+
+count=0
+mismatchcount=0
+routecount=0
+yearmatchcount=0
+for t in range(len(tlist)):
+    for s in dfdict['data']:
+        text=""
+        tick=1
+        if s[3]!=tlist[t]:
+            tick=0
+            continue;
+        bus='empty'
+        for y in [0,15,30,45]:
+            if bus!='empty':
+                break;
+            if len(r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'])==0:
+                continue;
+            
+            usedlist=bustype(r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'],s[6])
+            Routematch=AssignedRoute(usedlist,s[7]) 
+            Arrmatch=RouteR(usedlist,s[1],s[2])
+            secondarymatch=secondary(usedlist,rd[s[2]]['secondaryr'])
+            
+            usedlistS=bustype(r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist2'],s[6])
+            ArrmatchS=RouteR(usedlist,s[1],s[2])
+            secondarymatchS=secondary(usedlist,rd[s[2]]['secondaryr'])
+    
+            if len(Routematch)>0:
+                busL=Routematch  
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'].remove(bus)
+                text='on route-'+str(y)
+                routecount+=1
+                
+            elif len(Arrmatch)>0:
+                busL=Arrmatch
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j      
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'].remove(bus)
+                text='Arrival match-'+str(y)
+                 
+            elif len(secondarymatch)>0:
+                busL=secondarymatch
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j      
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'].remove(bus)
+                text='secondary match-'+str(y) 
+
+            elif len(usedlist)>0:
+                busL=usedlist
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j                            
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist'].remove(bus)
+                text='type match-'+str(y)
+                
+            elif len(ArrmatchS)>0:
+                busL=ArrmatchS
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j      
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist2'].remove(bus)
+                text='Arrival match Standby-'+str(y)
+                 
+            elif len(secondarymatchS)>0:
+                busL=secondarymatchS
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j      
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist2'].remove(bus)
+                text='secondary match- standby-'+str(y) 
+
+            elif len(usedlistS)>0:
+                busL=usedlistS
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j                            
+                r[s[1]][s[3]+pd.Timedelta(minutes=y)]['buslist2'].remove(bus)
+                text='type match- standby-'+str(y)
+            
+            elif y>=40 and busL==r[s[1]][s[3]]['buslist']:
+                bus=busL[0]
+                busrating=Ranking[bus]
+                for j in busL:
+                    if Ranking[j]>busrating:
+                        busrating=Ranking[j]
+                        bus=j
+                r[s[1]][s[3]]['buslist'].remove(bus)
+                rt=s[6]
+                bt=Type[bus]
+                text=str(rt)+"-"+str(bt)+"-mismatch-"+str(y)
+#                    text='mismatch'
+                mismatchcount+=1
+                      
+        if bus=='empty':          
+            bus='temp'+str(count)
+            count+=1
+            text='no bus'
+                
+        opsbuses.append(bus)
+        s.append(bus)
+        s.append(text)
+        if bus not in Type.keys():
+            Type[bus]=0
+        if bus in buscount.keys() and 'temp' not in bus:
+            buscount[bus]+=1
+        else:
+            buscount[bus]=0
+        sbuscount = sorted(buscount.items(), key=lambda item: item[1])
+#        if bus not in Ranking.keys():
+#            Ranking[bus]=0
+        Ranking = updateR(sbuscount,Rating) 
+        route=((s[1]+"-"+s[2]))
+        st=stay[stay['Route11']==route]['Stay'].iloc[0]  
+        arr=s[5]+st
+        if arr not in tlist:
+            tlist.append(arr)
+            tlist=sorted(tlist)
+            for city in cities:
+                r[city][arr]={'buslist':[]}                
+        r[s[1]][arr]['buslist']=[bus]+r[s[1]][arr]['buslist']
+        
+       
+    if t==len(tlist)-1:
+        continue
+    for city in cities:
+        r[city][tlist[t+1]]['buslist']=r[city][tlist[t]]['buslist']+r[city][tlist[t+1]]['buslist']
+        
+dfpd=pd.DataFrame.from_dict(dfdict['data'])
+dfpd=dfpd.rename(index=str, columns={0:"Terminal",1:"Dep",2:"Arr",3:"Deptime",4:"traveltime",5:"Arrtime",6:"Type",7:"Route",8:"Assignedbus",9:"Text"})
+dfpd['Dep_date'] = [d.date() for d in dfpd['Deptime']]
+dfpd['Dep_time'] = [d.time() for d in dfpd['Deptime']]
+
+end2 = time. time()
+print ((end2 - start2)/60)
+#%%
+# Output given to the Operation Department
+
+usage=pd.DataFrame()
+usage['Bus']=list(busprop['Bus'])
+for i in dfpd['Dep_date'].unique():
+    usage[i]=0
+a=dfpd.groupby(['Dep_date','Assignedbus']).count()['Dep']
+tempdf=pd.DataFrame({'combination':a.index,'count':a.values})
+for i in tempdf.index:
+    usage.loc[usage['Bus']==tempdf.iloc[i]['combination'][1],tempdf.iloc[i]['combination'][0]]=tempdf.iloc[i]['count']
+
+Location=pd.DataFrame.from_dict(busloc,orient='index',columns=['Terminal'])
+BTime=pd.DataFrame.from_dict(bustime,orient='index',columns=['Time'])
+Location=Location.reset_index()
+BTime=BTime.reset_index()
+Location = Location.rename(columns={'index': 'Bus'})
+BTime = BTime.rename(columns={'index': 'Bus'})
+Merge1=pd.merge(Location,BTime[['Bus','Time']],on='Bus', how='left')
+BusDetails=pd.merge(usage,Merge1[['Bus','Terminal',"Time"]],on='Bus', how='left')
+
+print ('OUTPUT Assigned unique buses')
+print (dfpd.groupby('Dep_date').Assignedbus.nunique())
+print (dfpd['Assignedbus'].nunique())
+print (dfpd['Text'].value_counts())
+print (dfpd['Terminal'].value_counts())
+
+#dfpd.to_excel("output.xlsx", sheet_name='2019-01-23')
